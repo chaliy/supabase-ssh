@@ -1,4 +1,4 @@
-import { Bash } from 'just-bash'
+import { Bash } from '@everruns/bashkit'
 import { beforeAll, describe, expect, it } from 'vitest'
 import {
   type CommandCompleteFn,
@@ -190,39 +190,40 @@ describe('formatHits', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Engine integration tests (real just-bash instance)
+// Engine integration tests (real bashkit instance)
 // ---------------------------------------------------------------------------
 describe('createCompletionEngine', () => {
   let bash: Bash
 
   beforeAll(() => {
     bash = new Bash({
-      cwd: '/home',
       files: {
         '/home/file.txt': 'hello',
         '/home/readme.md': 'world',
         '/home/docs/guide.md': 'guide',
       },
     })
+    bash.executeSync('cd /home')
   })
 
   describe('syntax-aware completion', () => {
-    it('completes $P with variable names', async () => {
+    it('completes $H with variable names', async () => {
       const engine = createCompletionEngine(bash)
-      const [hits, word] = await engine.complete('echo $P', '/home')
-      expect(word).toBe('$P')
-      expect(hits.some((h) => h.startsWith('$P'))).toBe(true)
+      const [hits, word] = await engine.complete('echo $H', '/home')
+      expect(word).toBe('$H')
+      expect(hits.some((h) => h.startsWith('$H'))).toBe(true)
     })
 
     it('completes ${P with closing brace', async () => {
       const engine = createCompletionEngine(bash)
       const [hits, word] = await engine.complete('echo ${P', '/home')
       expect(word).toBe('${P')
-      expect(hits.every((h) => h.startsWith('${') && h.endsWith('}'))).toBe(true)
+      // Each hit should start with ${ and include a closing } (single-match
+      // hits have a trailing space appended by readline convention)
+      expect(hits.every((h) => h.startsWith('${') && h.includes('}'))).toBe(true)
     })
 
     it('completes $( as command position via findCmdStart', async () => {
-      // findCmdStart splits at (, so $(ech becomes command position with word "ech"
       const engine = createCompletionEngine(bash)
       const [hits, word] = await engine.complete('echo $(ech', '/home')
       expect(word).toBe('ech')
@@ -230,7 +231,6 @@ describe('createCompletionEngine', () => {
     })
 
     it('completes backtick as command position via findCmdStart', async () => {
-      // findCmdStart splits at `, so `ech becomes command position with word "ech"
       const engine = createCompletionEngine(bash)
       const [hits, word] = await engine.complete('echo `ech', '/home')
       expect(word).toBe('ech')
@@ -248,7 +248,7 @@ describe('createCompletionEngine', () => {
     it('syntax-aware trumps completeFn', async () => {
       const completeFn: CommandCompleteFn = async () => ['should-not-appear']
       const engine = createCompletionEngine(bash, completeFn)
-      const [hits] = await engine.complete('echo $P', '/home')
+      const [hits] = await engine.complete('echo $H', '/home')
       expect(hits).not.toContain('should-not-appear')
     })
   })

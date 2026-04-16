@@ -1,5 +1,5 @@
 import { PassThrough } from 'node:stream'
-import { Bash } from 'just-bash'
+import { Bash } from '@everruns/bashkit'
 import { describe, expect, it, vi } from 'vitest'
 import { ShellSession, type ShellSessionOptions } from './session.js'
 
@@ -9,12 +9,12 @@ function createHarness(overrides?: Partial<ShellSessionOptions>) {
   const input = new PassThrough()
   const output = new PassThrough({ encoding: 'utf-8' })
   const bash = new Bash({
-    cwd: '/home',
     files: {
       '/home/file.txt': 'hello',
       '/home/sub/nested.txt': 'nested',
     },
   })
+  bash.executeSync('cd /home')
 
   const session = new ShellSession({
     bash,
@@ -104,14 +104,10 @@ describe('ShellSession', () => {
     const { input, output, session } = createHarness({ beforeExec })
     await waitForPrompt(output)
 
-    // When beforeExec returns false, handleLine returns early (no prompt, no exec).
-    // This matches real usage where the server closes the channel on 'exit'.
-    // Send both lines - the second will produce a prompt we can wait for.
     sendLine(input, 'skip-me')
     sendLine(input, 'echo after')
     const buf = await waitForPrompt(output)
 
-    // 'echo after' ran, so we see its output. 'skip-me' was never executed.
     expect(buf).toContain('after')
     expect(beforeExec).toHaveBeenCalledWith('skip-me')
     expect(beforeExec).toHaveBeenCalledWith('echo after')

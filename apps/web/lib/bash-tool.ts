@@ -1,12 +1,15 @@
-import type { BashExecResult } from 'just-bash'
-import { Bash, defineCommand, InMemoryFs } from 'just-bash'
+import type { ExecResult } from '@everruns/bashkit'
+import { Bash } from '@everruns/bashkit'
 
 const EXEC_API_URL = process.env.EXEC_API_URL ?? 'https://supabase.sh/api/exec'
 
 const TIMEOUT_MS = 15_000
 
-/** Custom ssh command that intercepts `ssh supabase.sh <cmd>` and routes it to the exec API. */
-const sshCommand = defineCommand('ssh', async (args) => {
+/**
+ * Handle the custom `ssh` command by intercepting it before bash execution.
+ * Routes `ssh supabase.sh <cmd>` to the exec API.
+ */
+async function handleSshCommand(args: string[]): Promise<ExecResult> {
   const [target, ...rest] = args
 
   if (target !== 'supabase.sh') {
@@ -63,18 +66,36 @@ const sshCommand = defineCommand('ssh', async (args) => {
     stderr: body.stderr ?? '',
     exitCode: body.exitCode ?? 0,
   }
-})
+}
+
+/**
+ * Parse an ssh command from a command string.
+ * Returns the args after 'ssh' if the command starts with ssh, otherwise null.
+ */
+function parseSshCommand(command: string): string[] | null {
+  const trimmed = command.trim()
+  if (!trimmed.startsWith('ssh ')) return null
+  // Split on whitespace, skip 'ssh'
+  const parts = trimmed.split(/\s+/)
+  return parts.slice(1)
+}
 
 /**
  * Execute a bash command in an isolated in-memory shell.
  * The `ssh supabase.sh <cmd>` command routes to EXEC_API_URL.
  */
-export async function executeBashCommand(command: string): Promise<BashExecResult> {
-  const fs = new InMemoryFs()
-  const bash = new Bash({
-    fs,
-    customCommands: [sshCommand],
-  })
+export async function executeBashCommand(command: string): Promise<ExecResult> {
+  // Intercept ssh commands before passing to bash
+  const sshArgs = parseSshCommand(command)
+  if (sshArgs) {
+    return handleSshCommand(sshArgs)
+  }
 
-  return bash.exec(command, { signal: AbortSignal.timeout(TIMEOUT_MS) })
+  const bash = new Bash({
+    maxCommands: 1000,
+    maxLoopIterations: 1000,
+  })
+  const signal = AbortSignal.timeout(TIMEOUT_MS)
+  signal.addEventListener('abort', () => bash.cancel(), { once: true })
+  return bash.execute(command)
 }

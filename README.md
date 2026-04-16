@@ -4,6 +4,9 @@
 
 ![supabase-ssh-demo](https://github.com/user-attachments/assets/aa0f6cb1-1fa1-4d1f-8f9e-a6a04c1bb405)
 
+> [!NOTE]
+> 😈 This repo is a port of the original [just-bash](https://github.com/vercel-labs/just-bash) implementation to [bashkit](https://github.com/everruns/bashkit).
+
 Give your agents shell access to Supabase documentation:
 
 ```bash
@@ -30,7 +33,7 @@ Traditional search interfaces (FTS, vector search) work too, but they're more op
 
 ## How does it work?
 
-Under the hood, commands run inside Vercel's [just-bash](https://github.com/vercel-labs/just-bash) library - an emulated bash shell completely sandboxed within the Node.js runtime. It uses a virtual filesystem (VFS) where the Supabase docs are mounted as markdown files. When your agent runs commands over SSH, just-bash executes them within its emulated environment and returns the output without actually running them on a real shell.
+Under the hood, commands run inside [bashkit](https://github.com/everruns/bashkit) - a sandboxed bash interpreter with an in-memory virtual filesystem. The Supabase docs are mounted as markdown files. When your agent runs commands over SSH, bashkit executes them within its sandboxed environment and returns the output without actually running them on a real shell.
 
 ## License
 

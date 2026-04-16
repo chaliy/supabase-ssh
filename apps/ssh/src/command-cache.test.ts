@@ -1,9 +1,9 @@
-import type { BashExecResult } from 'just-bash'
+import type { ExecResult } from '@everruns/bashkit'
 import { describe, expect, it } from 'vitest'
 import { CommandCache } from './command-cache.js'
 
-function makeResult(stdout: string, exitCode = 0): BashExecResult {
-  return { stdout, stderr: '', exitCode, env: {} }
+function makeResult(stdout: string, exitCode = 0): ExecResult {
+  return { stdout, stderr: '', exitCode }
 }
 
 describe('CommandCache', () => {

@@ -105,7 +105,9 @@ export function createApiServer(opts: ApiServerOptions = {}) {
       // Execute command
       try {
         const { bash } = await createBash(docsDir)
-        const result = await bash.exec(command, { cwd, signal: AbortSignal.timeout(execTimeout) })
+        const signal = AbortSignal.timeout(execTimeout)
+        signal.addEventListener('abort', () => bash.cancel(), { once: true })
+        const result = await bash.execute(command)
         commandCache?.set(cwd, command, result)
         return c.json({
           stdout: result.stdout ?? '',

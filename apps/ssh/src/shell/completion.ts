@@ -1,15 +1,15 @@
 /**
  * Shell completion engine - ported from bash 5.3 bashline.c.
  *
- * just-bash's exec() is stateless (like bash -c) so programmable completion
- * via compspecs is not viable. Instead we port bash's orchestration logic
- * and add a JS completion hook for per-command argument completion.
+ * bashkit's execute() is stateful so we use executeSync for compgen calls
+ * and filesystem queries. We add a JS completion hook for per-command
+ * argument completion.
  *
  * See createCompletionEngine() for the pipeline.
  */
 
 import { posix } from 'node:path'
-import type { Bash } from 'just-bash'
+import type { Bash } from '@everruns/bashkit'
 
 type CompletionResult = [completions: string[], word: string]
 
@@ -96,9 +96,9 @@ export function shellQuote(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`
 }
 
-/** Generate completion matches via just-bash's compgen builtin. Mirrors the C-internal compgen calls in bashline.c. */
-async function compgen(bash: Bash, action: string, prefix: string, cwd: string): Promise<string[]> {
-  const result = await bash.exec(`compgen -A ${action} -- ${shellQuote(prefix)}`, { cwd })
+/** Generate completion matches via bashkit's compgen builtin. Mirrors the C-internal compgen calls in bashline.c. */
+function compgen(bash: Bash, action: string, prefix: string, cwd: string): string[] {
+  const result = bash.executeSync(`cd ${shellQuote(cwd)} && compgen -A ${action} -- ${shellQuote(prefix)}`)
   if (result.exitCode !== 0 || !result.stdout.trim()) return []
   return result.stdout.trim().split('\n').filter(Boolean)
 }
@@ -135,8 +135,6 @@ export function createCompletionEngine(
       }
 
       // Custom JS completion hook - analogous to complete -F but in JS.
-      // Needed because just-bash exec() is stateless so bash-native
-      // programmable completion (compspecs) can't persist across calls.
       if (completeFn) {
         const hits = await completeFn({
           command: ctx.command,
@@ -166,27 +164,14 @@ async function completeSyntaxAware(
   cwd: string,
 ): Promise<string[] | null> {
   // --- $ prefix: variable names ---
-  // Ref: bashline.c lines 1836-1862
-  // Note: $( and ` are handled by findCmdStart splitting at ( and ` separators,
-  // which puts the next token in command position. Only $VAR and ${VAR} reach here.
   if (word.startsWith('$')) {
     if (word.startsWith('${')) {
-      // Parameter expansion: ${PAT<tab> -> complete with closing }
-      const hits = (await compgen(bash, 'variable', word.slice(2), cwd)).map((v) => `\${${v}}`)
+      const hits = (compgen(bash, 'variable', word.slice(2), cwd)).map((v) => `\${${v}}`)
       return formatHits(hits)
     }
-    // Plain $VAR completion
-    const hits = (await compgen(bash, 'variable', word.slice(1), cwd)).map((v) => `$${v}`)
+    const hits = (compgen(bash, 'variable', word.slice(1), cwd)).map((v) => `$${v}`)
     return formatHits(hits)
   }
-
-  // --- ~ prefix: username completion ---
-  // Ref: bashline.c line 1865
-  // No-op in sandboxed environment (no real users).
-
-  // --- @ prefix: hostname completion ---
-  // Ref: bashline.c line 1870
-  // No-op in sandboxed environment (no real hosts).
 
   return null
 }
@@ -196,7 +181,7 @@ async function completeSyntaxAware(
  * Ref: bashline.c lines 1875-1920
  */
 async function completeCommands(bash: Bash, word: string, cwd: string): Promise<CompletionResult> {
-  const hits = await compgen(bash, 'command', word, cwd)
+  const hits = compgen(bash, 'command', word, cwd)
   return [formatHits(hits), word]
 }
 
@@ -208,7 +193,8 @@ async function completeFiles(bash: Bash, word: string, cwd: string): Promise<Com
   // Expand ~ to $HOME for fs lookup, preserve ~/prefix in displayed completions
   let tildePrefix = ''
   let expanded = word
-  const home = bash.getEnv().HOME
+  const homeResult = bash.executeSync('echo $HOME')
+  const home = homeResult.stdout.trim()
   if (home && (word === '~' || word.startsWith('~/'))) {
     tildePrefix = word.startsWith('~/') ? '~/' : '~'
     expanded = home + word.slice(1)
@@ -220,25 +206,22 @@ async function completeFiles(bash: Bash, word: string, cwd: string): Promise<Com
   const searchDir = dirPart ? posix.resolve(cwd, dirPart) : cwd
 
   try {
-    const entries = await bash.fs.readdir(searchDir)
+    const entries = bash.ls(searchDir)
     const matches = entries.filter((e) => e.startsWith(namePart)).map((e) => dirPart + e)
 
-    const decorated = await Promise.all(
-      matches.map(async (match) => {
-        try {
-          const fullPath = posix.resolve(cwd, match)
-          const stat = await bash.fs.stat(fullPath)
-          // Restore ~/prefix for display
-          const display = tildePrefix
-            ? tildePrefix + match.slice((home?.length ?? 0) + (tildePrefix === '~/' ? 1 : 0))
-            : match
-          if (stat.isDirectory) return `${display}/`
-          return matches.length === 1 ? `${display} ` : display
-        } catch {
-          return match
-        }
-      }),
-    )
+    const decorated = matches.map((match) => {
+      try {
+        const fullPath = posix.resolve(cwd, match)
+        const stat = bash.stat(fullPath)
+        const display = tildePrefix
+          ? tildePrefix + match.slice((home?.length ?? 0) + (tildePrefix === '~/' ? 1 : 0))
+          : match
+        if (stat.fileType === 'directory') return `${display}/`
+        return matches.length === 1 ? `${display} ` : display
+      } catch {
+        return match
+      }
+    })
 
     return [decorated, word]
   } catch {

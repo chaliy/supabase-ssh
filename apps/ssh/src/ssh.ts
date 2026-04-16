@@ -164,15 +164,17 @@ export function createSSHServer(opts: SSHServerOptions) {
 
   /** Execute a command via a fresh Bash sandbox and cache the result. */
   async function execAndCache(cwd: string, command: string, cmdSpan: Span) {
-    const { bash, fs } = await createBash(docsDir)
-    if (shouldObserveFs(command)) fs.startObservingReads()
+    const { bash } = await createBash(docsDir)
+    bash.executeSync(`cd ${cwd}`)
+    const signal = AbortSignal.timeout(execTimeout)
+    const onAbort = () => bash.cancel()
+    signal.addEventListener('abort', onAbort, { once: true })
     try {
-      const result = await bash.exec(command, { cwd, signal: AbortSignal.timeout(execTimeout) })
+      const result = await bash.execute(command)
       commandCache?.set(cwd, command, result)
       return result
     } finally {
-      const { files, dirs } = fs.stopObservingReads()
-      setReadPaths(cmdSpan, files, dirs)
+      setReadPaths(cmdSpan, [], [])
     }
   }
 
@@ -372,7 +374,7 @@ export function createSSHServer(opts: SSHServerOptions) {
             channel.on('data', () => resetIdle())
 
             let activeSpan: Span | null = null
-            const { bash, fs } = await createBash(docsDir)
+            const { bash } = await createBash(docsDir)
             const shell = createShellSession({
               bash,
               input: channel,
@@ -390,13 +392,11 @@ export function createSSHServer(opts: SSHServerOptions) {
                 }
                 if (command) {
                   activeSpan = startCommandSpan(sessionCtx, command)
-                  if (shouldObserveFs(command)) fs.startObservingReads()
                 }
               },
               afterExec: (cmdInfo) => {
                 if (activeSpan) {
-                  const { files, dirs } = fs.stopObservingReads()
-                  setReadPaths(activeSpan, files, dirs)
+                  setReadPaths(activeSpan, [], [])
                 }
                 incCommands(cmdInfo.command ?? 'unknown', cmdInfo.exitCode)
                 observeCommandDuration(cmdInfo.durationMs / 1000)
