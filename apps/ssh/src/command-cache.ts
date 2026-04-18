@@ -1,4 +1,4 @@
-import type { BashExecResult } from 'just-bash'
+import type { ExecResult } from '@everruns/bashkit'
 
 export interface CommandCacheOptions {
   maxEntries?: number
@@ -14,7 +14,7 @@ export interface CommandCacheStats {
 
 /** In-memory LRU cache for command output. Safe because the VFS is read-only. */
 export class CommandCache {
-  #cache = new Map<string, BashExecResult>()
+  #cache = new Map<string, ExecResult>()
   #maxEntries: number
   #maxOutputBytes: number
   #hits = 0
@@ -29,7 +29,7 @@ export class CommandCache {
     return `${cwd}\0${command}`
   }
 
-  get(cwd: string, command: string): BashExecResult | undefined {
+  get(cwd: string, command: string): ExecResult | undefined {
     const key = CommandCache.#key(cwd, command)
     const entry = this.#cache.get(key)
     if (entry) {
@@ -43,7 +43,7 @@ export class CommandCache {
     return undefined
   }
 
-  set(cwd: string, command: string, result: BashExecResult): void {
+  set(cwd: string, command: string, result: ExecResult): void {
     const key = CommandCache.#key(cwd, command)
     const outputBytes =
       Buffer.byteLength(result.stdout ?? '') + Buffer.byteLength(result.stderr ?? '')

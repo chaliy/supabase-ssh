@@ -1,6 +1,6 @@
 import { createInterface, type Interface } from 'node:readline'
 import type { Readable, Writable } from 'node:stream'
-import type { Bash } from 'just-bash'
+import type { Bash } from '@everruns/bashkit'
 import type { CommandCompleteFn } from './completion.js'
 import { type CompletionEngine, createCompletionEngine } from './completion.js'
 
@@ -51,7 +51,7 @@ export class ShellSession {
 
   constructor(opts: ShellSessionOptions) {
     this.#bash = opts.bash
-    this.#cwd = opts.bash.getCwd()
+    this.#cwd = opts.bash.executeSync('pwd').stdout.trim()
     this.#promptFn = opts.prompt
     this.#completion = createCompletionEngine(opts.bash, opts.complete)
     this.#onExit = opts.onExit
@@ -98,11 +98,16 @@ export class ShellSession {
     if (command) {
       const start = performance.now()
       try {
-        const signal = this.#execTimeout ? AbortSignal.timeout(this.#execTimeout) : undefined
-        const result = await this.#bash.exec(command, { cwd: this.#cwd, signal })
+        let timeoutId: ReturnType<typeof setTimeout> | undefined
+        if (this.#execTimeout) {
+          timeoutId = setTimeout(() => this.#bash.cancel(), this.#execTimeout)
+        }
+        const result = await this.#bash.execute(command)
+        clearTimeout(timeoutId)
         if (result.stdout) this.#output.write(result.stdout.replace(/\n/g, '\r\n'))
         if (result.stderr) this.#output.write(result.stderr.replace(/\n/g, '\r\n'))
-        if (result.env.PWD) this.#cwd = result.env.PWD
+        // Update cwd from the stateful bash instance
+        this.#cwd = this.#bash.executeSync('pwd').stdout.trim()
         this.#afterExec?.({
           command,
           exitCode: result.exitCode ?? 0,

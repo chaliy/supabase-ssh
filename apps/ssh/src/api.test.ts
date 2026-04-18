@@ -122,7 +122,7 @@ describe('command cache', () => {
   it('uses cache when provided', async () => {
     const cache = new CommandCache()
     const cwd = '/supabase'
-    cache.set(cwd, 'echo cached', { stdout: 'from-cache\n', stderr: '', exitCode: 0, env: {} })
+    cache.set(cwd, 'echo cached', { stdout: 'from-cache\n', stderr: '', exitCode: 0 })
 
     const cachedApp = createApiServer({
       enableExec: true,

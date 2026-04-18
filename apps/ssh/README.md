@@ -2,7 +2,7 @@
 
 An SSH server that exposes Supabase content as a sandboxed virtual filesystem, designed for AI agents and CLI power-users. Currently serves docs, with plans to expand to more content.
 
-Commands run inside [just-bash](https://github.com/vercel-labs/just-bash) - a sandboxed in-memory shell.
+Commands run inside [bashkit](https://github.com/everruns/bashkit) - a sandboxed in-memory shell.
 
 ## Local development
 

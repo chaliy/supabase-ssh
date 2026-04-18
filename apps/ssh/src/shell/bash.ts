@@ -1,26 +1,11 @@
 import { resolve } from 'node:path'
-import { Bash, defineCommand, OverlayFs } from 'just-bash'
-
-import { ExtendedMountableFs } from './extended-mountable-fs.js'
+import { Bash, type ExecResult } from '@everruns/bashkit'
 
 const DEFAULT_DOCS_DIR = resolve(process.env.DOCS_DIR ?? './docs')
 
 export const EXECUTION_LIMITS = {
-  maxCommandCount: 1000,
+  maxCommands: 1000,
   maxLoopIterations: 1000,
-  maxCallDepth: 50,
-  maxSubstitutionDepth: 20,
-  maxSourceDepth: 10,
-  maxFileDescriptors: 100,
-  maxAwkIterations: 1000,
-  maxSedIterations: 1000,
-  maxJqIterations: 1000,
-  maxGlobOperations: 10000,
-  maxArrayElements: 10000,
-  maxBraceExpansionResults: 1000,
-  maxOutputSize: 1024 * 1024, // 1MB
-  maxStringLength: 1024 * 1024, // 1MB
-  maxHeredocSize: 1024 * 1024, // 1MB
 }
 
 const INSTRUCTIONS = `\`\`\`bash
@@ -123,58 +108,51 @@ Run both sets of commands above.
 After setup, confirm to the user what was written and where.
 `
 
-const sshCommand = defineCommand('ssh', async (args) => {
-  const cmd = args.join(' ')
-  const hint = cmd === 'supabase.sh agents' ? ' >> AGENTS.md' : ''
-  return {
-    stdout: '',
-    stderr:
-      'ssh is not available from within this session.\n' +
-      'Exit first, then run:\n\n' +
-      `  ssh ${cmd}${hint}\n\n`,
-    exitCode: 1,
-  }
-})
-
 /**
- * Creates a sandboxed Bash instance.
+ * Creates a sandboxed Bash instance with docs mounted as a read-only overlay.
  * @param docsDir - Path to docs directory to mount. Defaults to DOCS_DIR env or ./docs.
  */
 export async function createBash(docsDir = DEFAULT_DOCS_DIR) {
-  const fs = new ExtendedMountableFs({
-    readOnly: true,
-    initialFiles: {
+  const bash = new Bash({
+    files: {
       '/supabase/AGENTS.md': AGENTS_MD,
       '/supabase/SKILL.md': SKILL_MD,
       '/supabase/SETUP.md': SETUP_MD,
     },
-    mounts: [
-      {
-        mountPoint: '/supabase/docs',
-        filesystem: new OverlayFs({ root: docsDir, mountPoint: '/', readOnly: true }),
-      },
-    ],
+    maxCommands: EXECUTION_LIMITS.maxCommands,
+    maxLoopIterations: EXECUTION_LIMITS.maxLoopIterations,
   })
 
-  const bash = new Bash({
-    fs,
-    cwd: '/supabase',
-    env: {
-      HOME: '/supabase',
-      BASH_ALIAS_ll: 'ls -alF',
-      BASH_ALIAS_la: 'ls -a',
-      BASH_ALIAS_l: 'ls -CF',
-      BASH_ALIAS_agents: 'echo && cat /supabase/AGENTS.md',
-      BASH_ALIAS_skill: 'echo && cat /supabase/SKILL.md',
-      BASH_ALIAS_setup: 'cat /supabase/SETUP.md',
-    },
-    customCommands: [sshCommand],
-    defenseInDepth: true,
-    executionLimits: EXECUTION_LIMITS,
-  })
+  // Mount docs as read-only (enforced at Rust VFS level).
+  // Uses mount() method instead of mounts option due to bashkit bug where
+  // readOnly is not enforced when mounts and files are combined in constructor.
+  bash.mount(docsDir, '/supabase/docs')
 
-  // Enable alias expansion
-  await bash.exec('shopt -s expand_aliases')
+  // Set up environment
+  bash.executeSync('export HOME=/supabase')
+  bash.executeSync('cd /supabase')
 
-  return { bash, fs }
+  // Set up aliases
+  bash.executeSync('shopt -s expand_aliases')
+  bash.executeSync("alias ll='ls -alF'")
+  bash.executeSync("alias la='ls -a'")
+  bash.executeSync("alias l='ls -CF'")
+  bash.executeSync("alias agents='echo && cat /supabase/AGENTS.md'")
+  bash.executeSync("alias skill='echo && cat /supabase/SKILL.md'")
+  bash.executeSync("alias setup='cat /supabase/SETUP.md'")
+
+  // Define ssh command as a bash function that prints a helpful error
+  bash.executeSync(`ssh() {
+  local cmd="\$*"
+  local hint=""
+  if [ "\$cmd" = "supabase.sh agents" ]; then hint=" >> AGENTS.md"; fi
+  echo "ssh is not available from within this session." >&2
+  echo "Exit first, then run:" >&2
+  echo "" >&2
+  echo "  ssh \$cmd\$hint" >&2
+  echo "" >&2
+  return 1
+}`)
+
+  return { bash }
 }

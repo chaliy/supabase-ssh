@@ -12,6 +12,7 @@
   "dependencies": {
     "@ai-sdk/openai": "^3.0.48",
     "@ai-sdk/react": "^3.0.140",
+    "@everruns/bashkit": "^0.1.19",
     "@inkjs/ui": "^2.0.0",
     "@upstash/ratelimit": "^2.0.8",
     "@vercel/kv": "^3.0.0",
@@ -24,7 +25,6 @@
     "clsx": "^2.1.1",
     "ink": "^6.8.0",
     "ink-web": "^0.2.0",
-    "just-bash": "^2.14.0",
     "lucide-react": "^1.7.0",
     "marked": "^15.0.12",
     "marked-terminal": "^7.3.0",
